@@ -1,12 +1,26 @@
 package com.andr.androidwear_face;
 
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Rect;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
 import android.view.SurfaceHolder;
+
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.wearable.DataApi;
+import com.google.android.gms.wearable.DataEvent;
+import com.google.android.gms.wearable.DataEventBuffer;
+import com.google.android.gms.wearable.DataItem;
+import com.google.android.gms.wearable.DataItemBuffer;
+import com.google.android.gms.wearable.DataMap;
+import com.google.android.gms.wearable.DataMapItem;
+import com.google.android.gms.wearable.Wearable;
 
 import java.util.concurrent.TimeUnit;
 
@@ -23,15 +37,79 @@ public class SimpleWatchFaceService extends CanvasWatchFaceService {
         return new SimpleEngine();
     }
 
-    private class SimpleEngine extends CanvasWatchFaceService.Engine{
+    private class SimpleEngine extends CanvasWatchFaceService.Engine implements
+            GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener{
 
-
+        private GoogleApiClient googleApiClient;
         private Handler timeTick;
         private SimpleWatchFace watchFace;
 
         @Override
+        public void onConnectionFailed(ConnectionResult connectionResult) {
+
+        }
+
+        @Override
+        public void onConnectionSuspended(int i) {
+
+        }
+
+        @Override
+        public void onConnected(Bundle bundle) {
+            Wearable.DataApi.addListener(googleApiClient, onDataChangedListener);
+            Wearable.DataApi.getDataItems(googleApiClient).setResultCallback(onConnectedResultCallback);
+        }
+
+        private final DataApi.DataListener onDataChangedListener = new DataApi.DataListener() {
+            @Override
+            public void onDataChanged(DataEventBuffer dataEvents) {
+                for (DataEvent event : dataEvents) {
+                    if (event.getType() == DataEvent.TYPE_CHANGED) {
+                        DataItem item = event.getDataItem();
+                        processConfigurationFor(item);
+                    }
+                }
+
+                dataEvents.release();
+                invalidateIfNecessary();
+            }
+        };
+
+        private final ResultCallback<DataItemBuffer> onConnectedResultCallback = new ResultCallback<DataItemBuffer>() {
+            @Override
+            public void onResult(DataItemBuffer dataItems) {
+                for (DataItem item : dataItems) {
+                    processConfigurationFor(item);
+                }
+
+                dataItems.release();
+                invalidateIfNecessary();
+            }
+        };
+
+        private void processConfigurationFor(DataItem item) {
+            if ("/simple_watch_face_config".equals(item.getUri().getPath())) {
+                DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
+                if (dataMap.containsKey("KEY_BACKGROUND_COLOUR")) {
+                    String backgroundColour = dataMap.getString("KEY_BACKGROUND_COLOUR");
+                    watchFace.updateBackgroundColourTo(Color.parseColor(backgroundColour));
+                }
+
+                if (dataMap.containsKey("KEY_DATE_TIME_COLOUR")) {
+                    String timeColour = dataMap.getString("KEY_DATE_TIME_COLOUR");
+                    watchFace.updateDateAndTimeColourTo(Color.parseColor(timeColour));
+                }
+            }
+        }
+        @Override
         public void onCreate(SurfaceHolder holder) {
             super.onCreate(holder);
+
+            googleApiClient = new GoogleApiClient.Builder(SimpleWatchFaceService.this)
+                    .addApi(Wearable.API)
+                    .addConnectionCallbacks(this)
+                    .addOnConnectionFailedListener(this)
+                    .build();
 
             setWatchFaceStyle(new WatchFaceStyle.Builder(SimpleWatchFaceService.this)
                     .setCardPeekMode(WatchFaceStyle.PEEK_MODE_SHORT)
@@ -78,8 +156,23 @@ public class SimpleWatchFaceService extends CanvasWatchFaceService {
         @Override
         public void onVisibilityChanged(boolean visible) {
             super.onVisibilityChanged(visible);
+            if(visible){
+                googleApiClient.connect();
+            }
+            else{
+                releaseGoogleApiClient();
+            }
             startTimerIfNecessary();
+
         }
+
+        private void releaseGoogleApiClient() {
+            if (googleApiClient != null && googleApiClient.isConnected()) {
+                Wearable.DataApi.removeListener(googleApiClient, onDataChangedListener);
+                googleApiClient.disconnect();
+            }
+        }
+
 
         @Override
         public void onAmbientModeChanged(boolean inAmbientMode) {
@@ -109,6 +202,7 @@ public class SimpleWatchFaceService extends CanvasWatchFaceService {
         @Override
         public void onDestroy() {
             timeTick.removeCallbacks(timeRunnable);
+            releaseGoogleApiClient();
             super.onDestroy();
         }
 

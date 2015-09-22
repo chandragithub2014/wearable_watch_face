@@ -129,4 +129,13 @@ public class SimpleWatchFace {
         timePaint.setColor(dateAndTimeColour);
         datePaint.setColor(dateAndTimeColour);
     }
+
+    public void updateBackgroundColourToDefault1() {
+        backgroundPaint.setColor(Color.RED);
+    }
+
+    public void updateDateAndTimeColourToDefault1() {
+        timePaint.setColor(Color.GREEN);
+        datePaint.setColor(Color.GREEN);
+    }
 }
